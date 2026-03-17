@@ -2,7 +2,7 @@ import { normalizePath, Notice, Platform, TFile, TFolder, Command, TAbstractFile
 import ContactsPlugin from "src/main";
 import { DEFAULT_CONTACT_TEMPLATE } from "src/consts";
 import { ContactsService } from "src/services/ContactsService";
-import { ContactModel } from "src/models/ContactModel";
+import { ContactModel, ContactModelParams } from "src/models/ContactModel";
 import { ContactFileReplaceRegex, PlaceholderMatchingRegex } from "src/consts";
 
 export class SyncContacts implements Command {
@@ -33,12 +33,12 @@ export class SyncContacts implements Command {
 
   FillStringPlaceholders(template: string, contact: ContactModel): string {
     const filledTemplate = template.replace(PlaceholderMatchingRegex, (placeholder) => {
-      let param = placeholder.replace(/{|}/g, '').trim();
+      let param = placeholder.replace(/{|}/g, '').trim() as keyof ContactModelParams;
       if (!contact.hasOwnProperty(param))
         throw new Error(`Illegal placeholder ${String(param)} in template.`);
-      let value = contact[param as keyof ContactModel];
-      return Array.isArray(value) ? '['.concat((value as Array<string>).join(', '), ']') : String(value);
+      return contact.getFormattedValueByParam(param);  
     });
+    
     return filledTemplate;
   }
 

@@ -125,5 +125,33 @@ export class ContactModel {
             BirthDate: vCardStr.match(/^BDAY:(.*)$/m)?.[1] ?? '',
         } as ContactModelParams);
     }
+
+    getValueByParam(param: keyof ContactModelParams): string | string[] {
+        return this[param];
+    }
+
+    getFormattedValueByParam(param: keyof ContactModelParams): string {
+        let value = this.getValueByParam(param);
+        console.log(`Formatting param ${param} with value:`, value);
+        if (value === undefined || value === null || value === '') return '';
+        if (Array.isArray(value) && value.length === 0) return '';
+
+
+        switch (param) {
+            case 'PhoneNumbers':
+                return (value as string[]).map(phoneStr => 
+                    `[${phoneStr}](tel:${phoneStr.replace(/\s/g, '')})`
+                ).join(', ');
+            case 'BirthDate':
+                let date = new Date(value as string);
+                return date.toLocaleDateString(undefined, { year: 'numeric', month: 'numeric', day: 'numeric' });
+            default:
+                if (Array.isArray(value)) {
+                    return value.join(', ');
+                } else {
+                    return String(value);
+                }
+        }
+    }
 }
 
