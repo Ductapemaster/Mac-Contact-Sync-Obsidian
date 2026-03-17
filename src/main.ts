@@ -1,16 +1,14 @@
 import { Plugin } from 'obsidian';
-import { CommandHandler } from './handlers/CommandHandler';
 import { ContactsPluginSettings, ContactsSettingTab, DEFAULT_SETTINGS } from './Settings';
+import { SyncContacts } from './commands/SyncContacts';
 
 export default class ContactsPlugin extends Plugin {
 	settings: ContactsPluginSettings;
-	commandHandler: CommandHandler;
 
 	async onload() {
 		await this.loadSettings();
 
-		this.commandHandler = new CommandHandler(this)
-		this.commandHandler.setup()
+		this.addCommand(new SyncContacts(this));
 
 		this.addSettingTab(new ContactsSettingTab(this.app, this));
 	}

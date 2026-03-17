@@ -39,43 +39,6 @@ groups[0].people.length;`;
 			return resultInt;
 		})
 	}
-	
-	async getVCards(): Promise<VCard[]> {
-		const JXA_SCRIPT = `
-ObjC.import('stdlib');
-ObjC.import('Foundation');
-
-let stdout = $.NSFileHandle.fileHandleWithStandardOutput;
-
-let Contacts = Application('Contacts');
-Contacts.includeStandardAdditions = true;
-
-let groups = Contacts.groups.whose({ name: '${this.groupName}' });
-if (groups.length === 0 || groups === undefined || groups === null) {
-	throw new Error('GROUP_NOT_DEFINED_ERROR');
-}
-
-
-let people = groups[0].people;
-for (let i = 0; i < people.length; i++) {
-    stdout.writeData($.NSString.alloc.initWithUTF8String(people[i].vcard().replace(/^PHOTO.*?==$/sm, '')).dataUsingEncoding($.NSUTF8StringEncoding));
-}`;
-		const vCardRegex = /BEGIN:VCARD[\s\S]*?END:VCARD/g;
-		let resultPromise = this.osaScriptService.executeScript(JXA_SCRIPT).then<VCard[]>((vCardStr) => {
-			let matches =  vCardStr.match(vCardRegex);
-			
-			let vCards: VCard[] = [];
-			for (let match of matches ?? []) {
-				const card = new vcf().parse(match);
-				const vCardObj = new VCard(card);
-				vCards.push(vCardObj);
-			}
-
-			return vCards;
-		});
-
-		return await resultPromise;
-    }
     
 	getContactStream(): Readable {
 		const JXA_SCRIPT = `
