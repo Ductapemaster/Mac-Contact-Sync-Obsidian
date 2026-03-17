@@ -94,7 +94,7 @@ export class ContactModel {
             .map(match => match.groups?.email ?? '');
         let PhoneNumbers = Array.from(vCardStr.matchAll(/^TEL([^:]*):(?<phone>.*)$/mg))
             .map(match => match.groups?.phone ?? '');
-        let Addresses = Array.from(vCardStr.matchAll(/^ADR(?<type>[^:]*?):(?<pobox>[^;]*?);(?<extended>[^;]*?);(?<street>[^;]*?);(?<locality>[^;]*?);(?<region>[^;]*?);(?<code>[^;]*?);(?<country>[^;]*?)$/mg))
+        let Addresses = Array.from(vCardStr.matchAll(/^(.*?\.)?ADR(?<type>[^:]*?):(?<pobox>[^;]*?);(?<extended>[^;]*?);(?<street>[^;]*?);(?<locality>[^;]*?);(?<region>[^;]*?);(?<code>[^;]*?);(?<country>[^;]*?)$/mg))
             .map(match => `${match.groups?.street}, ${match.groups?.code} ${match.groups?.locality}, ${match.groups?.region} ${match.groups?.country}`)
             .map(adr => adr.replace(/\n,/g, '').replace(/  /g, ' ').trim());
         let URLs = Array.from(vCardStr.matchAll(/^.*?URL([^:]*):(?<url>.*)$/mg))
