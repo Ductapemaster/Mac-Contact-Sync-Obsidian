@@ -3,13 +3,31 @@ import { IOsaScriptService, OsaScriptService } from './osascriptService';
 
 const vcf = require('vcf');
 
+export interface ContactEntry {
+	markdown: string;
+	originalFilename: string;
+}
+
 export interface IContactsService {
     readonly groupName: string;
     readonly enabledContactFields: string;
+    readonly normalizeDiacritics: boolean;
 
-    loadContacts(): Promise<Map<string, string>>;
+    loadContacts(): Promise<Map<string, ContactEntry>>;
     getNumberOfContacts(): Promise<number>;
     getVCards(): Promise<VCard[]>;
+}
+
+export function stripDiacritics(str: string): string {
+	return str
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.replace(/[\xF8\xD8]/g, (c) => c === '\xF8' ? 'o' : 'O')
+		.replace(/[\xE6\xC6]/g, (c) => c === '\xE6' ? 'ae' : 'Ae')
+		.replace(/[\xF0\xD0]/g, (c) => c === '\xF0' ? 'd' : 'D')
+		.replace(/[\xFE\xDE]/g, (c) => c === '\xFE' ? 'th' : 'Th')
+		.replace(/\xDF/g, 'ss')
+		.replace(/[\u0141\u0142]/g, (c) => c === '\u0142' ? 'l' : 'L');
 }
 
 export class ContactsService implements IContactsService {
@@ -17,25 +35,29 @@ export class ContactsService implements IContactsService {
 
     readonly groupName: string;
     readonly enabledContactFields: string;
+    readonly normalizeDiacritics: boolean;
 
     readonly GROUP_NOT_DEFINED_ERROR = "GROUP NOT DEFINED";
 
-    constructor(groupName: string, enabledContactFields: string, osaScriptService: IOsaScriptService = new OsaScriptService()) {
+    constructor(groupName: string, enabledContactFields: string, normalizeDiacritics: boolean, osaScriptService: IOsaScriptService = new OsaScriptService()) {
 		this.groupName = groupName;
         this.enabledContactFields = enabledContactFields;
+        this.normalizeDiacritics = normalizeDiacritics;
 		this.osaScriptService = osaScriptService;
     }
 
-    async loadContacts(): Promise<Map<string, string>> {
+    async loadContacts(): Promise<Map<string, ContactEntry>> {
         let vCards: VCard[] = await this.getVCards();
 		// Filter out vCards without names
 		vCards = vCards.filter((vcard) => {
 			return vcard.fn != undefined;
 		});
 
-		const filenameToMarkdown = new Map<string, string>();
+		const filenameToMarkdown = new Map<string, ContactEntry>();
 		for (let vcard of vCards) {
-			filenameToMarkdown.set(vcard.getFilename(), vcard.toMarkdown(this.enabledContactFields));
+			const originalFilename = vcard.getFilename();
+			const filename = this.normalizeDiacritics ? stripDiacritics(originalFilename) : originalFilename;
+			filenameToMarkdown.set(filename, { markdown: vcard.toMarkdown(this.enabledContactFields), originalFilename });
 		}
 		return filenameToMarkdown;
     }
