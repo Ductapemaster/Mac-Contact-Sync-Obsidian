@@ -1,6 +1,6 @@
 import { App, Notice, Platform, Plugin, PluginSettingTab, Setting, TFile, TFolder, normalizePath } from 'obsidian';
 import VCard from './vcard';
-import { IContactsService, ContactsService, ContactEntry, stripDiacritics } from './contactsService';
+import { IContactsService, ContactsService, ContactEntry, alternateFilename } from './contactsService';
 import { ContentSeperator, FileService, IFileService } from './fileService';
 
 interface ContactsPluginSettings {
@@ -51,7 +51,7 @@ class SettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Normalize diacritics in filenames')
-			.setDesc('Strip accents and diacritical marks from contact names when generating file names (e.g. Østen → Osten)')
+			.setDesc('Strip accents and diacritical marks from contact names when generating file names (e.g. Østen → Osten). When toggled, existing contact files will be renamed automatically on the next sync.')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.normalizeDiacritics)
 				.onChange(async (value) => {
@@ -135,29 +135,36 @@ export default class ContactsPlugin extends Plugin {
 				// Load contacts from MacOS "Contacts" and save to files
 				let markdownResults = await loadContactsLogic.loadContacts();
 				let successfulContacts = 0
+				let renamedContacts = 0
 				let promises: Array<Promise<any>> = [];
-				for (let [filename, { markdown, originalFilename }] of markdownResults) {
+				for (let [filename, entry] of markdownResults) {
 					let filePath = normalizePath(`${this.settings.contactsFolder}/${filename}.md`);
 					let file = this.app.vault.getAbstractFileByPath(filePath);
 
-					let newContactInfo = contentSeperator.buildContentString(markdown);
+					let newContactInfo = contentSeperator.buildContentString(entry.markdown);
 
-					// If normalized file doesn't exist, check for an old un-normalized file to rename
-					if (file === null && filename !== originalFilename) {
-						const oldFilePath = normalizePath(`${this.settings.contactsFolder}/${originalFilename}.md`);
-						const oldFile = this.app.vault.getAbstractFileByPath(oldFilePath);
-						if (oldFile instanceof TFile) {
-							promises.push(
-								this.app.fileManager.renameFile(oldFile, filePath)
-									.then(() => {
-										const renamedFile = this.app.vault.getAbstractFileByPath(filePath);
-										if (renamedFile instanceof TFile)
-											return fileService.updateFile(renamedFile, newContactInfo, new ContentSeperator(this.settings.autogenerationStartTag, this.settings.autogenerationStartText, this.settings.autogenerationEndTag, this.settings.autogenerationEndText), this.app);
-									})
-									.then((_) => successfulContacts++)
-									.catch((error) => console.error(`Error renaming/syncing ${filename}\n${error}`))
-							);
-							continue;
+					// If the target file doesn't exist, check whether it exists under the alternate
+					// name (i.e. the name it would have under the opposite normalization setting).
+					// This handles both directions: turning normalization ON renames un-normalized →
+					// normalized, and turning it OFF renames normalized → un-normalized.
+					if (file === null) {
+						const altName = alternateFilename(filename, entry);
+						if (altName !== null) {
+							const altFilePath = normalizePath(`${this.settings.contactsFolder}/${altName}.md`);
+							const altFile = this.app.vault.getAbstractFileByPath(altFilePath);
+							if (altFile instanceof TFile) {
+								promises.push(
+									this.app.fileManager.renameFile(altFile, filePath)
+										.then(() => {
+											const renamedFile = this.app.vault.getAbstractFileByPath(filePath);
+											if (renamedFile instanceof TFile)
+												return fileService.updateFile(renamedFile, newContactInfo, contentSeperator, this.app);
+										})
+										.then(() => { renamedContacts++; successfulContacts++; })
+										.catch((error) => console.error(`Error renaming/syncing ${filename}\n${error}`))
+								);
+								continue;
+							}
 						}
 					}
 
@@ -175,8 +182,7 @@ export default class ContactsPlugin extends Plugin {
 					// contactFile exists
 					} else if (file instanceof TFile) {
 						promises.push(
-							// extract the old contact info and replace it with the new data
-							fileService.updateFile(file, newContactInfo, new ContentSeperator(this.settings.autogenerationStartTag, this.settings.autogenerationStartText, this.settings.autogenerationEndTag, this.settings.autogenerationEndText), this.app)
+							fileService.updateFile(file, newContactInfo, contentSeperator, this.app)
 							.then((_) => successfulContacts++)
 							.catch((error) => console.error(`Error syncing ${filename}\n${error}`))
 						);
@@ -188,8 +194,9 @@ export default class ContactsPlugin extends Plugin {
 					new Notice("Error syncing contacts!");
 					console.error(error);
 				}).finally(() => {
-					new Notice(`Successfully synced ${successfulContacts} of ${numContacts} Contacts`)
-					console.info(`Successfully synced ${successfulContacts} of ${numContacts} Contacts`)
+					const renameInfo = renamedContacts > 0 ? ` (${renamedContacts} renamed)` : '';
+					new Notice(`Successfully synced ${successfulContacts} of ${numContacts} Contacts${renameInfo}`)
+					console.info(`Successfully synced ${successfulContacts} of ${numContacts} Contacts${renameInfo}`)
 				});
 			}
 		});

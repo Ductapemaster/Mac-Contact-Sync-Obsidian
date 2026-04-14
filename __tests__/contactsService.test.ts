@@ -1,8 +1,8 @@
 // __tests__/contactsService.test.ts
 
 import { IOsaScriptService } from '../src/osascriptService';
-import { IContactsService, ContactsService, ContactEntry, stripDiacritics } from '../src/contactsService';
-import { TEST_VCARD_DATA } from './testVCards';
+import { IContactsService, ContactsService, ContactEntry, stripDiacritics, alternateFilename } from '../src/contactsService';
+import { TEST_VCARD_DATA, DIACRITIC_VCARD_STRING } from './testVCards';
 
 const vcf = require('vcf');
 
@@ -88,26 +88,89 @@ describe('Test ContactsService', () => {
         await expect(resultPromise).rejects.toThrow();
     });
 
-    test('loadContacts: returns originalFilename alongside normalized filename', async () => {
+    test('loadContacts: entry has markdown, originalFilename, and normalizedFilename', async () => {
         const vCardStr = Array.from(TEST_VCARD_DATA.keys())[0];
         mockOsaScriptService.executeScript.mockResolvedValue(vCardStr);
         const service = new ContactsService(groupName, enabledContactFields, false, mockOsaScriptService);
         const result = await service.loadContacts();
-        for (const [filename, entry] of result) {
+        for (const [, entry] of result) {
             expect(entry).toHaveProperty('markdown');
             expect(entry).toHaveProperty('originalFilename');
-            expect(entry.originalFilename).toBe(filename);
+            expect(entry).toHaveProperty('normalizedFilename');
         }
     });
 
-    test('loadContacts: normalization disabled — filename unchanged', async () => {
-        const vCardStr = Array.from(TEST_VCARD_DATA.keys())[0];
-        mockOsaScriptService.executeScript.mockResolvedValue(vCardStr);
+    test('loadContacts: normalization OFF — map key equals originalFilename', async () => {
+        mockOsaScriptService.executeScript.mockResolvedValue(DIACRITIC_VCARD_STRING);
         const service = new ContactsService(groupName, enabledContactFields, false, mockOsaScriptService);
         const result = await service.loadContacts();
         for (const [filename, entry] of result) {
             expect(filename).toBe(entry.originalFilename);
         }
+    });
+
+    test('loadContacts: normalization OFF — normalizedFilename differs from originalFilename for diacritic names', async () => {
+        mockOsaScriptService.executeScript.mockResolvedValue(DIACRITIC_VCARD_STRING);
+        const service = new ContactsService(groupName, enabledContactFields, false, mockOsaScriptService);
+        const result = await service.loadContacts();
+        const [[, entry]] = [...result];
+        expect(entry.originalFilename).toBe('Østen Müller-Andreassen');
+        expect(entry.normalizedFilename).toBe('Osten Muller-Andreassen');
+        expect(entry.normalizedFilename).not.toBe(entry.originalFilename);
+    });
+
+    test('loadContacts: normalization ON — map key equals normalizedFilename', async () => {
+        mockOsaScriptService.executeScript.mockResolvedValue(DIACRITIC_VCARD_STRING);
+        const service = new ContactsService(groupName, enabledContactFields, true, mockOsaScriptService);
+        const result = await service.loadContacts();
+        for (const [filename, entry] of result) {
+            expect(filename).toBe(entry.normalizedFilename);
+        }
+    });
+
+    test('loadContacts: normalization ON — map key is stripped of diacritics', async () => {
+        mockOsaScriptService.executeScript.mockResolvedValue(DIACRITIC_VCARD_STRING);
+        const service = new ContactsService(groupName, enabledContactFields, true, mockOsaScriptService);
+        const result = await service.loadContacts();
+        const [[filename, entry]] = [...result];
+        expect(filename).toBe('Osten Muller-Andreassen');
+        expect(entry.originalFilename).toBe('Østen Müller-Andreassen');
+    });
+
+    test('loadContacts: plain-ASCII name — normalizedFilename equals originalFilename regardless of setting', async () => {
+        const vCardStr = Array.from(TEST_VCARD_DATA.keys())[0]; // "Prefix First Middle Last"
+        mockOsaScriptService.executeScript.mockResolvedValue(vCardStr);
+        const serviceOff = new ContactsService(groupName, enabledContactFields, false, mockOsaScriptService);
+        const resultOff = await serviceOff.loadContacts();
+        for (const [filename, entry] of resultOff) {
+            expect(entry.normalizedFilename).toBe(entry.originalFilename);
+            expect(filename).toBe(entry.originalFilename);
+        }
+    });
+});
+
+describe('alternateFilename', () => {
+    const makeEntry = (original: string, normalized: string): ContactEntry => ({
+        markdown: '',
+        originalFilename: original,
+        normalizedFilename: normalized,
+    });
+
+    test('normalization ON: returns originalFilename so old un-normalized file can be found', () => {
+        // Normalization is ON → map key (filename) === normalizedFilename
+        const entry = makeEntry('Østen Andreassen', 'Osten Andreassen');
+        expect(alternateFilename('Osten Andreassen', entry)).toBe('Østen Andreassen');
+    });
+
+    test('normalization OFF: returns normalizedFilename so old normalized file can be found', () => {
+        // Normalization is OFF → map key (filename) === originalFilename
+        const entry = makeEntry('Østen Andreassen', 'Osten Andreassen');
+        expect(alternateFilename('Østen Andreassen', entry)).toBe('Osten Andreassen');
+    });
+
+    test('no diacritics: returns null (no rename needed)', () => {
+        const entry = makeEntry('Plain Name', 'Plain Name');
+        expect(alternateFilename('Plain Name', entry)).toBeNull();
     });
 });
 

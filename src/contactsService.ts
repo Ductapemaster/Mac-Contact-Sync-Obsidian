@@ -6,6 +6,22 @@ const vcf = require('vcf');
 export interface ContactEntry {
 	markdown: string;
 	originalFilename: string;
+	normalizedFilename: string;
+}
+
+/**
+ * Returns the "other" filename to check when a file is missing — i.e. the name the
+ * file would have under the opposite normalization setting.  Returns null when the
+ * contact name contains no diacritics and no rename is needed.
+ *
+ * - Normalization ON  (filename === normalizedFilename): returns originalFilename
+ *   so the sync loop can find and rename an existing un-normalized file.
+ * - Normalization OFF (filename === originalFilename):  returns normalizedFilename
+ *   so the sync loop can find and rename an existing normalized file back.
+ */
+export function alternateFilename(filename: string, entry: ContactEntry): string | null {
+	if (entry.normalizedFilename === entry.originalFilename) return null;
+	return filename === entry.normalizedFilename ? entry.originalFilename : entry.normalizedFilename;
 }
 
 export interface IContactsService {
@@ -56,8 +72,9 @@ export class ContactsService implements IContactsService {
 		const filenameToMarkdown = new Map<string, ContactEntry>();
 		for (let vcard of vCards) {
 			const originalFilename = vcard.getFilename();
-			const filename = this.normalizeDiacritics ? stripDiacritics(originalFilename) : originalFilename;
-			filenameToMarkdown.set(filename, { markdown: vcard.toMarkdown(this.enabledContactFields), originalFilename });
+			const normalizedFilename = stripDiacritics(originalFilename);
+			const filename = this.normalizeDiacritics ? normalizedFilename : originalFilename;
+			filenameToMarkdown.set(filename, { markdown: vcard.toMarkdown(this.enabledContactFields), originalFilename, normalizedFilename });
 		}
 		return filenameToMarkdown;
     }
