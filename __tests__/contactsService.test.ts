@@ -17,7 +17,6 @@ describe('Test ContactsService', () => {
     const groupName = 'testGroup';
     const enabledContactFields = 'nickname,emails,title,organization,telephones,addresses,birthdate,URLs,notes';
 
-
     beforeEach(() => {
         mockOsaScriptService = new MockOsaScriptService();
         contactsService = new ContactsService(groupName, enabledContactFields, mockOsaScriptService);
@@ -27,65 +26,65 @@ describe('Test ContactsService', () => {
         expect(contactsService).toBeDefined();
     });
 
-    test('getNumberOfContactsInGroup: valid response', async () => {
-        let testPromise = new Promise((resolve, reject) => {
-            resolve('3');
-        });
+    test('getNumberOfContacts: uses AppleScript (not JXA)', async () => {
+        mockOsaScriptService.executeScript.mockResolvedValue('0');
+        await contactsService.getNumberOfContacts();
+        const script: string = mockOsaScriptService.executeScript.mock.calls[0][0];
+        expect(script).toContain('tell application "Contacts"');
+        expect(script).not.toContain('-l JavaScript');
+        expect(script).not.toContain('whose');
+    });
 
-        mockOsaScriptService.executeScript.mockResolvedValue(testPromise);
+    test('getVCards: uses AppleScript (not JXA)', async () => {
+        mockOsaScriptService.executeScript.mockResolvedValue('');
+        await contactsService.getVCards();
+        const script: string = mockOsaScriptService.executeScript.mock.calls[0][0];
+        expect(script).toContain('tell application "Contacts"');
+        expect(script).not.toContain('ObjC.import');
+        expect(script).not.toContain('whose');
+    });
+
+    test('getNumberOfContacts: uses group name in script', async () => {
+        mockOsaScriptService.executeScript.mockResolvedValue('0');
+        await contactsService.getNumberOfContacts();
+        const script: string = mockOsaScriptService.executeScript.mock.calls[0][0];
+        expect(script).toContain(groupName);
+    });
+
+    test('getNumberOfContacts: valid response', async () => {
+        mockOsaScriptService.executeScript.mockResolvedValue('3');
         const result = await contactsService.getNumberOfContacts();
         expect(result).toBe(3);
     });
 
-    test('getNumberOfContactsInGroup: non-numeric reponse', async () => {
-    let testPromise = new Promise((resolve, reject) => {
-            resolve('abc');
-        });
-
-        mockOsaScriptService.executeScript.mockResolvedValue(testPromise);
+    test('getNumberOfContacts: non-numeric response', async () => {
+        mockOsaScriptService.executeScript.mockResolvedValue('abc');
         const resultPromise = contactsService.getNumberOfContacts();
-
-        expect(resultPromise).rejects.toThrow();
+        await expect(resultPromise).rejects.toThrow();
     });
 
-    test('getNumberOfContactsInGroup: error reponse', async () => {
-        let testPromise = new Promise((resolve, reject) => {
-            reject(new Error('dummy error'));
-        });
-
-        mockOsaScriptService.executeScript.mockResolvedValue(testPromise);
+    test('getNumberOfContacts: error response', async () => {
+        mockOsaScriptService.executeScript.mockRejectedValue(new Error('dummy error'));
         const resultPromise = contactsService.getNumberOfContacts();
-
-        expect(resultPromise).rejects.toThrow()
+        await expect(resultPromise).rejects.toThrow();
     });
 
     test.each(Array.from(TEST_VCARD_DATA))('getVCards: valid response: single vCard', async (vCardStr, vCard) => {
-        let testPromise = new Promise((resolve, reject) => {
-            resolve(vCardStr);
-        });
-        
-        mockOsaScriptService.executeScript.mockResolvedValue(testPromise);
-        const resultPromise = contactsService.getVCards();
-        expect(resultPromise).resolves.toEqual([vCard]);
+        mockOsaScriptService.executeScript.mockResolvedValue(vCardStr);
+        const result = await contactsService.getVCards();
+        expect(result).toEqual([vCard]);
     });
 
     test('getVCards: valid response: multiple vCards', async () => {
-        let testPromise = new Promise((resolve, reject) => {
-            resolve(Array.from(TEST_VCARD_DATA).join('\r\n'));
-        });
-        
-        mockOsaScriptService.executeScript.mockResolvedValue(testPromise);
-        const resultPromise = contactsService.getVCards();
-        expect(resultPromise).resolves.toEqual(Array.from(TEST_VCARD_DATA.values()));
+        const combined = Array.from(TEST_VCARD_DATA.keys()).join('\r\n');
+        mockOsaScriptService.executeScript.mockResolvedValue(combined);
+        const result = await contactsService.getVCards();
+        expect(result).toEqual(Array.from(TEST_VCARD_DATA.values()));
     });
 
     test('getVCards: error response', async () => {
-        let testPromise = new Promise((resolve, reject) => {
-            reject(new Error('dummy error'));
-        });
-        
-        mockOsaScriptService.executeScript.mockResolvedValue(testPromise);
+        mockOsaScriptService.executeScript.mockRejectedValue(new Error('dummy error'));
         const resultPromise = contactsService.getVCards();
-        expect(resultPromise).rejects.toThrow();
+        await expect(resultPromise).rejects.toThrow();
     });
 });
