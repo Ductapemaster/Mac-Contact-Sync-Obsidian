@@ -1,6 +1,6 @@
 import { App, Notice, Platform, Plugin, PluginSettingTab, Setting, TFile, TFolder, normalizePath } from 'obsidian';
 import VCard from './vcard';
-import { IContactsService, ContactsService, ContactEntry, alternateFilename } from './contactsService';
+import { IContactsService, ContactsService, alternateFilename } from './contactsService';
 import { ContentSeperator, FileService, IFileService } from './fileService';
 
 interface ContactsPluginSettings {

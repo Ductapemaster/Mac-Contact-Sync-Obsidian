@@ -2,6 +2,19 @@ import VCard from "../src/vcard";
 
 const vcf = require("vcf");
 
+// Diacritic vCard defined first so it can be reused in TEST_VCARDS_STRINGS and exported.
+// Uses LF line endings here; DIACRITIC_VCARD_STRING exports the CRLF form that osascript returns.
+const DIACRITIC_VCARD_LF =
+// Test vCard with diacritics in name (Ø and ü — covers both NFD and non-decomposing chars)
+`BEGIN:VCARD
+VERSION:3.0
+PRODID:-//Apple Inc.//macOS 14.5//EN
+N:Andreassen;Østen;;;
+FN:Østen Müller-Andreassen
+CATEGORIES:card
+UID:a1b2c3d4-0000-0000-0000-000000000001
+X-ABUID:A1B2C3D4-0000-0000-0000-000000000001:ABPerson
+END:VCARD`;
 
 const TEST_VCARDS_STRINGS: string[] = [
 // Test vCard with all fields
@@ -40,23 +53,12 @@ CATEGORIES:card
 UID:5cdf1bd4-fa54-4b8d-94f1-0be1c0d70001
 X-ABUID:8657CFA5-A319-42DC-8FFC-76B77A8B0452:ABPerson
 END:VCARD`,
-// Test vCard with diacritics in name (Ø and ü — covers both NFD and non-decomposing chars)
-`BEGIN:VCARD
-VERSION:3.0
-PRODID:-//Apple Inc.//macOS 14.5//EN
-N:Andreassen;Østen;;;
-FN:Østen Müller-Andreassen
-CATEGORIES:card
-UID:a1b2c3d4-0000-0000-0000-000000000001
-X-ABUID:A1B2C3D4-0000-0000-0000-000000000001:ABPerson
-END:VCARD`
+DIACRITIC_VCARD_LF,
 ].map((vcardStr) => vcardStr.replace(/\n/g, "\r\n"));
 
-// vCard string for the diacritics fixture, for use in normalization tests
-export const DIACRITIC_VCARD_STRING: string = (() => {
-    const raw = `BEGIN:VCARD\r\nVERSION:3.0\r\nPRODID:-//Apple Inc.//macOS 14.5//EN\r\nN:Andreassen;Østen;;;\r\nFN:Østen Müller-Andreassen\r\nCATEGORIES:card\r\nUID:a1b2c3d4-0000-0000-0000-000000000001\r\nX-ABUID:A1B2C3D4-0000-0000-0000-000000000001:ABPerson\r\nEND:VCARD`;
-    return raw;
-})();
+// Raw CRLF form of the diacritic vCard, matching what osascript returns.
+// Used in tests that mock executeScript's return value directly.
+export const DIACRITIC_VCARD_STRING = DIACRITIC_VCARD_LF.replace(/\n/g, "\r\n");
 
 export const TEST_VCARD_DATA: Map<string, VCard> = new Map(
     TEST_VCARDS_STRINGS.map((vcardStr) => [vcardStr, new VCard(vcf().parse(vcardStr))]));
