@@ -20,12 +20,11 @@ export class ContactsService implements IContactsService {
 
     readonly GROUP_NOT_DEFINED_ERROR = "GROUP NOT DEFINED";
 
-    constructor(groupName: string, enabledContactFields: string, osaScriptService: IOsaScriptService = new OsaScriptService() ) {
+    constructor(groupName: string, enabledContactFields: string, osaScriptService: IOsaScriptService = new OsaScriptService()) {
 		this.groupName = groupName;
         this.enabledContactFields = enabledContactFields;
-		this.osaScriptService = osaScriptService
+		this.osaScriptService = osaScriptService;
     }
-
 
     async loadContacts(): Promise<Map<string, string>> {
         let vCards: VCard[] = await this.getVCards();
@@ -42,21 +41,21 @@ export class ContactsService implements IContactsService {
     }
 
     async getNumberOfContacts(): Promise<number> {
-        const JXA_SCRIPT = `
-			let Contacts = Application('Contacts');
-			Contacts.includeStandardAdditions = true;
+        const APPLESCRIPT = `
+tell application "Contacts"
+	try
+		set targetGroup to group "${this.groupName}"
+		count of people in targetGroup
+	on error
+		error "${this.GROUP_NOT_DEFINED_ERROR}"
+	end try
+end tell
+`;
 
-			let groups = Contacts.groups.whose({ name: '${this.groupName}'});
-			if (groups.length === 0 || groups === undefined || groups === null)
-			 	throw new Error('${this.GROUP_NOT_DEFINED_ERROR}');
-
-			groups[0].people.length;
-		`;
-
-		let resultPromise = this.osaScriptService.executeScript(JXA_SCRIPT).then<number>((resultStr) => {
+		let resultPromise = this.osaScriptService.executeScript(APPLESCRIPT).then<number>((resultStr) => {
 			let resultInt = parseInt(resultStr);
 			if (isNaN(resultInt)) {
-				throw new Error(`Non-numeric result from JXA script: ${resultStr}`);
+				throw new Error(`Non-numeric result from AppleScript: ${resultStr}`);
 			}
 			return resultInt;
 		})
@@ -65,30 +64,25 @@ export class ContactsService implements IContactsService {
 	}
 
     async getVCards(): Promise<VCard[]> {
-		const JXA_SCRIPT = `
-			ObjC.import('Foundation');
-			const stdout = $.NSFileHandle.fileHandleWithStandardOutput;
-
-			let Contacts = Application('Contacts');
-			Contacts.includeStandardAdditions = true;
-
-			let groups = Contacts.groups.whose({ name: '${this.groupName}'});
-			if (groups.length === 0 || groups === undefined || groups === null)
-			 	throw new Error('${this.GROUP_NOT_DEFINED_ERROR}');
-
-			for (let vcard of groups[0].people.vcard()) {
-				// Write to stdout
-				const nsString = $.NSString.alloc.initWithUTF8String(vcard);
-				const data = nsString.dataUsingEncoding($.NSUTF8StringEncoding);
-				stdout.writeData(data);
-			}
-		`;
+		const APPLESCRIPT = `
+tell application "Contacts"
+	try
+		set targetGroup to group "${this.groupName}"
+		set vcardData to ""
+		repeat with eachPerson in people of targetGroup
+			set vcardData to vcardData & vcard of eachPerson & return
+		end repeat
+		return vcardData
+	on error
+		error "${this.GROUP_NOT_DEFINED_ERROR}"
+	end try
+end tell
+`;
 		const vCardRegex = /BEGIN:VCARD[\s\S]*?END:VCARD/g;
 
+		let resultPromise = this.osaScriptService.executeScript(APPLESCRIPT).then<VCard[]>((vCardStr) => {
+			let matches = vCardStr.match(vCardRegex);
 
-		let resultPromise = this.osaScriptService.executeScript(JXA_SCRIPT).then<VCard[]>((vCardStr) => {
-			let matches =  vCardStr.match(vCardRegex);
-			
 			let vCards: VCard[] = [];
 			for (let match of matches ?? []) {
 				const card = new vcf().parse(match);
