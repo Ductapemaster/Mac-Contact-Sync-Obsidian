@@ -61,7 +61,7 @@ export default class VCard {
 
 		fm['contact-name'] = this.fn;
 		if (this.xabuid) {
-			fm['contact-addressbook'] = `addressbook://${this.xabuid.replace(':', '%3A')}`;
+			fm['contact-open'] = `addressbook://${this.xabuid.replace(':', '%3A')}`;
 		}
 
 		for (const field of this.getVCardFields()) {
@@ -82,20 +82,15 @@ export default class VCard {
 					fm['contact-company'] = this.organization;
 					break;
 				case 'telephones':
-					fm['contact-phone'] = this.telephones?.map(([type, number]) => ({
-						type: type.split(',')[0],
-						number
-					}));
+					fm['contact-phone'] = this.telephones?.map(([type, number]) =>
+						`${type.split(',')[0]}:${number}`
+					);
 					break;
 				case 'addresses':
 					fm['contact-address'] = this.addresses?.map(([type, adr]) => {
 						const [, , street, city, , postcode, country] = adr.valueOf().split(';');
-						const entry: Record<string, string> = { type };
-						if (street) entry.street = street;
-						if (city) entry.city = city;
-						if (postcode) entry.postcode = postcode;
-						if (country) entry.country = country;
-						return entry;
+						const parts = [street, [postcode, city].filter(Boolean).join(' '), country].filter(Boolean);
+						return `${type}:${parts.join(', ')}`;
 					});
 					break;
 				case 'birthdate':
@@ -122,8 +117,8 @@ export default class VCard {
 			``,
 			`dv.header(2, "👤 " + (c["contact-name"] ?? dv.current().file.name));`,
 			``,
-			`if (c["contact-addressbook"]) {`,
-			`    dv.paragraph("[Open in Contacts](" + c["contact-addressbook"] + ")");`,
+			`if (c["contact-open"]) {`,
+			`    dv.paragraph("[Open Contact](" + c["contact-open"] + ")");`,
 			`}`,
 			``,
 			`const items = [];`,
@@ -137,15 +132,20 @@ export default class VCard {
 			`}`,
 			``,
 			`for (const p of (c["contact-phone"] ?? [])) {`,
-			`    const emoji = p.type === "cell" ? "📱" : p.type === "home" ? "🏠" : p.type === "work" ? "🏢" : "☎️";`,
-			`    const clean = p.number.replace(/\\s/g, "");`,
-			`    items.push(emoji + " [" + p.number + "](tel:" + clean + ")");`,
+			`    const colon = p.indexOf(":");`,
+			`    const type = p.substring(0, colon);`,
+			`    const number = p.substring(colon + 1);`,
+			`    const emoji = type === "cell" ? "📱" : type === "home" ? "🏠" : type === "work" ? "🏢" : "☎️";`,
+			`    const clean = number.replace(/\\s/g, "");`,
+			`    items.push(emoji + " [" + number + "](tel:" + clean + ")");`,
 			`}`,
 			``,
 			`for (const addr of (c["contact-address"] ?? [])) {`,
-			`    const emoji = addr.type === "home" ? "🏠" : addr.type === "work" ? "🏢" : "📍";`,
-			`    const parts = [addr.street, [addr.postcode, addr.city].filter(Boolean).join(" "), addr.country].filter(Boolean);`,
-			`    items.push(emoji + " " + addr.type + " address: " + parts.join(", "));`,
+			`    const colon = addr.indexOf(":");`,
+			`    const type = addr.substring(0, colon);`,
+			`    const formatted = addr.substring(colon + 1);`,
+			`    const emoji = type === "home" ? "🏠" : type === "work" ? "🏢" : "📍";`,
+			`    items.push(emoji + " " + formatted);`,
 			`}`,
 			``,
 			`if (c["contact-birthday"]) {`,
