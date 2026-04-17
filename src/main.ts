@@ -212,9 +212,9 @@ export default class ContactsPlugin extends Plugin {
 				const bodyMatch = raw.match(/^---[\s\S]*?---\n?([\s\S]*)$/);
 				return bodyMatch ? bodyMatch[1] : raw;
 			}
-			console.warn(`Contact template not found: ${templatePath}. Using default.`);
+			console.warn(`Contact template not found: ${templatePath}. Creating blank note.`);
 		}
-		return VCard.defaultBody();
+		return '';
 	}
 
 	async loadSettings() {
