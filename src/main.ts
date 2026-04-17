@@ -9,6 +9,7 @@ interface ContactsPluginSettings {
 	contactTemplatePath: string;
 	enabledContactFields: string;
 	normalizeDiacritics: boolean;
+	syncOnStartup: boolean;
 }
 
 class SettingTab extends PluginSettingTab {
@@ -43,6 +44,16 @@ class SettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.contactsGroup)
 				.onChange(async (value) => {
 					this.plugin.settings.contactsGroup = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Sync on startup')
+			.setDesc('Automatically sync contacts when Obsidian opens.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.syncOnStartup)
+				.onChange(async (value) => {
+					this.plugin.settings.syncOnStartup = value;
 					await this.plugin.saveSettings();
 				}));
 
@@ -100,7 +111,8 @@ const DEFAULT_SETTINGS: ContactsPluginSettings = {
 	contactsFolder: 'Contacts',
 	contactTemplatePath: '',
 	enabledContactFields: 'nickname,emails,title,organization,telephones,addresses,birthdate,URLs,notes',
-	normalizeDiacritics: false
+	normalizeDiacritics: false,
+	syncOnStartup: false,
 }
 
 export default class ContactsPlugin extends Plugin {
@@ -112,89 +124,95 @@ export default class ContactsPlugin extends Plugin {
 		this.addCommand({
 			id: 'sync-contacts',
 			name: 'Sync contacts',
-			callback: async () =>  {
-				if (!Platform.isMacOS)
-					return new Notice("Error: This plugin only works on MacOS");
-
-				new Notice('Syncing...')
-
-				let loadContactsLogic: IContactsService = new ContactsService(this.settings.contactsGroup, this.settings.enabledContactFields, this.settings.normalizeDiacritics)
-				let numContactsPromise = loadContactsLogic.getNumberOfContacts().then((numContacts) => {
-					new Notice(`Found ${numContacts} Contacts in group ${this.settings.contactsGroup}`)
-					return numContacts
-				})
-
-				let fileService: IFileService = new FileService();
-				let createFolderPromise = fileService.createFolder(this.settings.contactsFolder, this.app)
-
-				let [numContacts, _] = await Promise.all([numContactsPromise, createFolderPromise])
-
-				// Resolve the body for new contact notes (template or built-in default)
-				const newContactBody = await this.resolveNewContactBody();
-
-				// Load contacts from MacOS "Contacts" and save to files
-				let contactResults = await loadContactsLogic.loadContacts();
-				let successfulContacts = 0
-				let renamedContacts = 0
-				let promises: Array<Promise<any>> = [];
-				for (let [filename, entry] of contactResults) {
-					let filePath = normalizePath(`${this.settings.contactsFolder}/${filename}.md`);
-					let file = this.app.vault.getAbstractFileByPath(filePath);
-
-					// If the target file doesn't exist, check whether it exists under the alternate
-					// name (i.e. the name it would have under the opposite normalization setting).
-					if (file === null) {
-						const altName = alternateFilename(filename, entry);
-						if (altName !== null) {
-							const altFilePath = normalizePath(`${this.settings.contactsFolder}/${altName}.md`);
-							const altFile = this.app.vault.getAbstractFileByPath(altFilePath);
-							if (altFile instanceof TFile) {
-								promises.push(
-									this.app.fileManager.renameFile(altFile, filePath)
-										.then(() => {
-											const renamedFile = this.app.vault.getAbstractFileByPath(filePath);
-											if (renamedFile instanceof TFile)
-												return fileService.updateFile(renamedFile, entry.frontmatter, this.app);
-										})
-										.then(() => { renamedContacts++; successfulContacts++; })
-										.catch((error) => console.error(`Error renaming/syncing ${filename}\n${error}`))
-								);
-								continue;
-							}
-						}
-					}
-
-					if (file instanceof TFolder) {
-						console.error(`Error: ${filePath} is a folder`);
-						new Notice(`Error: ${filePath} is a folder`);
-					} else if (file === null) {
-						promises.push(
-							fileService.saveFile(filePath, entry.frontmatter, newContactBody, this.app)
-								.then((_) => successfulContacts++)
-								.catch((error) => console.error(`Error syncing ${filename}\n${error}`))
-						);
-					} else if (file instanceof TFile) {
-						promises.push(
-							fileService.updateFile(file, entry.frontmatter, this.app)
-							.then((_) => successfulContacts++)
-							.catch((error) => console.error(`Error syncing ${filename}\n${error}`))
-						);
-					}
-				}
-
-				await Promise.all(promises)
-				.catch((error) => {
-					new Notice("Error syncing contacts!");
-					console.error(error);
-				}).finally(() => {
-					const renameInfo = renamedContacts > 0 ? ` (${renamedContacts} renamed)` : '';
-					new Notice(`Successfully synced ${successfulContacts} of ${numContacts} Contacts${renameInfo}`)
-					console.info(`Successfully synced ${successfulContacts} of ${numContacts} Contacts${renameInfo}`)
-				});
-			}
+			callback: () => this.syncContacts(),
 		});
 
 		this.addSettingTab(new SettingTab(this.app, this));
+
+		if (this.settings.syncOnStartup) {
+			this.app.workspace.onLayoutReady(() => this.syncContacts());
+		}
+	}
+
+	async syncContacts(): Promise<void> {
+		if (!Platform.isMacOS)
+			return new Notice("Error: This plugin only works on MacOS") as unknown as void;
+
+		new Notice('Syncing...')
+
+		let loadContactsLogic: IContactsService = new ContactsService(this.settings.contactsGroup, this.settings.enabledContactFields, this.settings.normalizeDiacritics)
+		let numContactsPromise = loadContactsLogic.getNumberOfContacts().then((numContacts) => {
+			new Notice(`Found ${numContacts} Contacts in group ${this.settings.contactsGroup}`)
+			return numContacts
+		})
+
+		let fileService: IFileService = new FileService();
+		let createFolderPromise = fileService.createFolder(this.settings.contactsFolder, this.app)
+
+		let [numContacts, _] = await Promise.all([numContactsPromise, createFolderPromise])
+
+		// Resolve the body for new contact notes (template or built-in default)
+		const newContactBody = await this.resolveNewContactBody();
+
+		// Load contacts from MacOS "Contacts" and save to files
+		let contactResults = await loadContactsLogic.loadContacts();
+		let successfulContacts = 0
+		let renamedContacts = 0
+		let promises: Array<Promise<any>> = [];
+		for (let [filename, entry] of contactResults) {
+			let filePath = normalizePath(`${this.settings.contactsFolder}/${filename}.md`);
+			let file = this.app.vault.getAbstractFileByPath(filePath);
+
+			// If the target file doesn't exist, check whether it exists under the alternate
+			// name (i.e. the name it would have under the opposite normalization setting).
+			if (file === null) {
+				const altName = alternateFilename(filename, entry);
+				if (altName !== null) {
+					const altFilePath = normalizePath(`${this.settings.contactsFolder}/${altName}.md`);
+					const altFile = this.app.vault.getAbstractFileByPath(altFilePath);
+					if (altFile instanceof TFile) {
+						promises.push(
+							this.app.fileManager.renameFile(altFile, filePath)
+								.then(() => {
+									const renamedFile = this.app.vault.getAbstractFileByPath(filePath);
+									if (renamedFile instanceof TFile)
+										return fileService.updateFile(renamedFile, entry.frontmatter, this.app);
+								})
+								.then(() => { renamedContacts++; successfulContacts++; })
+								.catch((error) => console.error(`Error renaming/syncing ${filename}\n${error}`))
+						);
+						continue;
+					}
+				}
+			}
+
+			if (file instanceof TFolder) {
+				console.error(`Error: ${filePath} is a folder`);
+				new Notice(`Error: ${filePath} is a folder`);
+			} else if (file === null) {
+				promises.push(
+					fileService.saveFile(filePath, entry.frontmatter, newContactBody, this.app)
+						.then((_) => successfulContacts++)
+						.catch((error) => console.error(`Error syncing ${filename}\n${error}`))
+				);
+			} else if (file instanceof TFile) {
+				promises.push(
+					fileService.updateFile(file, entry.frontmatter, this.app)
+					.then((_) => successfulContacts++)
+					.catch((error) => console.error(`Error syncing ${filename}\n${error}`))
+				);
+			}
+		}
+
+		await Promise.all(promises)
+		.catch((error) => {
+			new Notice("Error syncing contacts!");
+			console.error(error);
+		}).finally(() => {
+			const renameInfo = renamedContacts > 0 ? ` (${renamedContacts} renamed)` : '';
+			new Notice(`Successfully synced ${successfulContacts} of ${numContacts} Contacts${renameInfo}`)
+			console.info(`Successfully synced ${successfulContacts} of ${numContacts} Contacts${renameInfo}`)
+		});
 	}
 
 	/**
