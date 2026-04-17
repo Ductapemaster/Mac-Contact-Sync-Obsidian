@@ -35,9 +35,10 @@ export class FileService implements IFileService {
 
             const existingFm: Record<string, any> = parseYaml(lines.slice(1, fmEndIndex).join('\n')) ?? {};
 
-            // Replace all contact-* keys; preserve everything else
+            // Replace all plugin-owned keys; preserve everything else
+            const PLUGIN_KEYS = new Set(['name', 'nickname', 'email', 'title', 'company', 'phone', 'address', 'birthday', 'url', 'notes', 'open']);
             for (const key of Object.keys(existingFm)) {
-                if (key.startsWith('contact-')) delete existingFm[key];
+                if (PLUGIN_KEYS.has(key)) delete existingFm[key];
             }
             const newFm = { ...existingFm, ...frontmatter };
 
