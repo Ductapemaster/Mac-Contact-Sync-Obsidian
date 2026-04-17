@@ -4,7 +4,7 @@ import { IOsaScriptService, OsaScriptService } from './osascriptService';
 const vcf = require('vcf');
 
 export interface ContactEntry {
-	markdown: string;
+	frontmatter: Record<string, any>;
 	originalFilename: string;
 	normalizedFilename: string;
 }
@@ -74,7 +74,7 @@ export class ContactsService implements IContactsService {
 			const originalFilename = vcard.getFilename();
 			const normalizedFilename = stripDiacritics(originalFilename);
 			const filename = this.normalizeDiacritics ? normalizedFilename : originalFilename;
-			filenameToMarkdown.set(filename, { markdown: vcard.toMarkdown(this.enabledContactFields), originalFilename, normalizedFilename });
+			filenameToMarkdown.set(filename, { frontmatter: vcard.toFrontmatter(this.enabledContactFields), originalFilename, normalizedFilename });
 		}
 		return filenameToMarkdown;
     }

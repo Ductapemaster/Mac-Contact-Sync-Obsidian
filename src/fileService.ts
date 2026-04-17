@@ -1,37 +1,10 @@
-import { App, TAbstractFile, TFile, TFolder, normalizePath } from "obsidian";
-
-export class ContentSeperator {
-    readonly startTag: string;
-    readonly startText: string;
-    readonly endTag: string;
-    readonly endText: string;
-    readonly commented: boolean;
-    readonly commentStart: string;
-    readonly commentEnd: string;
-
-    constructor(startTag: string, startText: string, stopTag: string, stopText: string, commented: boolean = true) {
-        this.startTag = startTag;
-        this.startText = startText;
-        this.endTag = stopTag;
-        this.endText = stopText;
-        this.commented = commented;
-
-        this.commentStart = commented ? '<!--' : '';
-        this.commentEnd = commented ? '-->' : '';
-    }
-
-    buildContentString(content: string) {
-        return `${this.commentStart} ${this.startTag} ${this.startText} ${this.commentEnd} \n${content} \n${this.commentStart} ${this.endTag} ${this.endText} ${this.commentEnd}`;
-    
-    }
-}
+import { App, TFile, TFolder, normalizePath, parseYaml, stringifyYaml } from "obsidian";
 
 export interface IFileService {
     createFolder(folderPath: string, app: App): Promise<void>;
-    saveFile(filePath: string, content: string, app: App): Promise<TFile>;
-    updateFile(file: TFile, updatedContent: string, seperator: ContentSeperator, app: App): Promise<string>;
+    saveFile(filePath: string, frontmatter: Record<string, any>, body: string, app: App): Promise<TFile>;
+    updateFile(file: TFile, frontmatter: Record<string, any>, app: App): Promise<void>;
 }
-
 
 export class FileService implements IFileService {
     async createFolder(folderPath: string, app: App): Promise<void> {
@@ -39,28 +12,37 @@ export class FileService implements IFileService {
             await app.vault.createFolder(folderPath);
     }
 
-    async saveFile(filePath: string, content: string, app: App,): Promise<TFile> {
-        return app.vault.create(filePath, content)
+    async saveFile(filePath: string, frontmatter: Record<string, any>, body: string, app: App): Promise<TFile> {
+        const fmStr = stringifyYaml(frontmatter);
+        const content = `---\n${fmStr}---\n\n${body}`;
+        return app.vault.create(filePath, content);
     }
 
-    async updateFile(file: TFile, updatedContent: string, seperator: ContentSeperator, app: App): Promise<string> {
-        return app.vault.process(file, (oldContent: string) => {
-            let oldLines = oldContent.split("\n");
-								
-            let startIndex = oldLines.findIndex((line) => line.contains(seperator.startTag));
-            let stopIndex = oldLines.findIndex((line) => line.contains(seperator.endTag));
+    async updateFile(file: TFile, frontmatter: Record<string, any>, app: App): Promise<void> {
+        await app.vault.process(file, (content: string) => {
+            const lines = content.split('\n');
 
-            let newLines = Array<string>();
-            for (let i = Math.min(0, startIndex); i < oldLines.length; i++) {
-                if (i == startIndex) {
-                    newLines.push(updatedContent);
-                    i = stopIndex;
-                    continue
-                }
-                newLines.push(oldLines[i]);
+            // No frontmatter — prepend it and leave the body untouched
+            if (lines[0]?.trim() !== '---') {
+                return `---\n${stringifyYaml(frontmatter)}---\n\n${content}`;
             }
 
-            return newLines.join("\n");
+            const fmEndIndex = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
+            if (fmEndIndex === -1) {
+                // Malformed frontmatter — prepend and leave body untouched
+                return `---\n${stringifyYaml(frontmatter)}---\n\n${content}`;
+            }
+
+            const existingFm: Record<string, any> = parseYaml(lines.slice(1, fmEndIndex).join('\n')) ?? {};
+
+            // Replace all contact-* keys; preserve everything else
+            for (const key of Object.keys(existingFm)) {
+                if (key.startsWith('contact-')) delete existingFm[key];
+            }
+            const newFm = { ...existingFm, ...frontmatter };
+
+            const body = lines.slice(fmEndIndex + 1).join('\n');
+            return `---\n${stringifyYaml(newFm)}---\n${body}`;
         });
     }
 }

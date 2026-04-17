@@ -88,15 +88,28 @@ describe('Test ContactsService', () => {
         await expect(resultPromise).rejects.toThrow();
     });
 
-    test('loadContacts: entry has markdown, originalFilename, and normalizedFilename', async () => {
+    test('loadContacts: entry has frontmatter, originalFilename, and normalizedFilename', async () => {
         const vCardStr = Array.from(TEST_VCARD_DATA.keys())[0];
         mockOsaScriptService.executeScript.mockResolvedValue(vCardStr);
         const service = new ContactsService(groupName, enabledContactFields, false, mockOsaScriptService);
         const result = await service.loadContacts();
         for (const [, entry] of result) {
-            expect(entry).toHaveProperty('markdown');
+            expect(entry).toHaveProperty('frontmatter');
             expect(entry).toHaveProperty('originalFilename');
             expect(entry).toHaveProperty('normalizedFilename');
+        }
+    });
+
+    test('loadContacts: frontmatter contains contact-name and contact-* fields', async () => {
+        const vCardStr = Array.from(TEST_VCARD_DATA.keys())[0];
+        mockOsaScriptService.executeScript.mockResolvedValue(vCardStr);
+        const service = new ContactsService(groupName, enabledContactFields, false, mockOsaScriptService);
+        const result = await service.loadContacts();
+        for (const [, entry] of result) {
+            expect(entry.frontmatter).toHaveProperty('contact-name');
+            for (const key of Object.keys(entry.frontmatter)) {
+                expect(key).toMatch(/^contact-/);
+            }
         }
     });
 
@@ -151,7 +164,7 @@ describe('Test ContactsService', () => {
 
 describe('alternateFilename', () => {
     const makeEntry = (original: string, normalized: string): ContactEntry => ({
-        markdown: '',
+        frontmatter: {},
         originalFilename: original,
         normalizedFilename: normalized,
     });

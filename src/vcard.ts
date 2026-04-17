@@ -56,6 +56,115 @@ export default class VCard {
 		return markdown.trim();
 	}
 
+	toFrontmatter(enabledFields: string): Record<string, any> {
+		const fm: Record<string, any> = {};
+
+		fm['contact-name'] = this.fn;
+		if (this.xabuid) {
+			fm['contact-addressbook'] = `addressbook://${this.xabuid.replace(':', '%3A')}`;
+		}
+
+		for (const field of this.getVCardFields()) {
+			if (!enabledFields.includes(field)) continue;
+			if ((this as any)[field] === undefined) continue;
+
+			switch (field) {
+				case 'nickname':
+					fm['contact-nickname'] = this.nickname;
+					break;
+				case 'emails':
+					fm['contact-email'] = this.emails;
+					break;
+				case 'title':
+					fm['contact-title'] = this.title;
+					break;
+				case 'organization':
+					fm['contact-company'] = this.organization;
+					break;
+				case 'telephones':
+					fm['contact-phone'] = this.telephones?.map(([type, number]) => ({
+						type: type.split(',')[0],
+						number
+					}));
+					break;
+				case 'addresses':
+					fm['contact-address'] = this.addresses?.map(([type, adr]) => {
+						const [, , street, city, , postcode, country] = adr.valueOf().split(';');
+						const entry: Record<string, string> = { type };
+						if (street) entry.street = street;
+						if (city) entry.city = city;
+						if (postcode) entry.postcode = postcode;
+						if (country) entry.country = country;
+						return entry;
+					});
+					break;
+				case 'birthdate':
+					if (this.birthdate) {
+						fm['contact-birthday'] = this.birthdate.toISOString().split('T')[0];
+					}
+					break;
+				case 'URLs':
+					fm['contact-url'] = this.URLs;
+					break;
+				case 'notes':
+					fm['contact-notes'] = this.notes?.replace(/\n\t/g, '\n');
+					break;
+			}
+		}
+
+		return fm;
+	}
+
+	static defaultBody(): string {
+		const fence = '```';
+		const script = [
+			`const c = dv.current();`,
+			``,
+			`dv.header(2, "👤 " + (c["contact-name"] ?? dv.current().file.name));`,
+			``,
+			`if (c["contact-addressbook"]) {`,
+			`    dv.paragraph("[Open in Contacts](" + c["contact-addressbook"] + ")");`,
+			`}`,
+			``,
+			`const items = [];`,
+			``,
+			`if (c["contact-nickname"]) items.push("Nickname: " + c["contact-nickname"]);`,
+			`if (c["contact-company"]) items.push("🏢 Organization: " + c["contact-company"]);`,
+			`if (c["contact-title"]) items.push("👔 Title: " + c["contact-title"]);`,
+			``,
+			`for (const email of (c["contact-email"] ?? [])) {`,
+			`    items.push("📧 [" + email + "](mailto:" + email + ")");`,
+			`}`,
+			``,
+			`for (const p of (c["contact-phone"] ?? [])) {`,
+			`    const emoji = p.type === "cell" ? "📱" : p.type === "home" ? "🏠" : p.type === "work" ? "🏢" : "☎️";`,
+			`    const clean = p.number.replace(/\\s/g, "");`,
+			`    items.push(emoji + " [" + p.number + "](tel:" + clean + ")");`,
+			`}`,
+			``,
+			`for (const addr of (c["contact-address"] ?? [])) {`,
+			`    const emoji = addr.type === "home" ? "🏠" : addr.type === "work" ? "🏢" : "📍";`,
+			`    const parts = [addr.street, [addr.postcode, addr.city].filter(Boolean).join(" "), addr.country].filter(Boolean);`,
+			`    items.push(emoji + " " + addr.type + " address: " + parts.join(", "));`,
+			`}`,
+			``,
+			`if (c["contact-birthday"]) {`,
+			`    const bday = c["contact-birthday"];`,
+			`    const display = bday && typeof bday === "object" && bday.toLocaleString ? bday.toLocaleString() : String(bday);`,
+			`    items.push("🎂 Birthday: " + display);`,
+			`}`,
+			``,
+			`for (const url of (c["contact-url"] ?? [])) {`,
+			`    items.push("🌐 Website: [" + url + "](" + url + ")");`,
+			`}`,
+			``,
+			`if (c["contact-notes"]) items.push("📝 Notes: " + c["contact-notes"]);`,
+			``,
+			`if (items.length > 0) dv.list(items);`,
+		].join('\n');
+		return `${fence}dataviewjs\n${script}\n${fence}`;
+	}
+
 	private fieldToMarkdown(field: string): string | undefined {
 		if (typeof (this as any)[field] === 'undefined') return undefined;
 
